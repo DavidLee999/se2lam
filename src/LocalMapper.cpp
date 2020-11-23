@@ -53,8 +53,10 @@ void LocalMapper::addNewKF(PtrKeyFrame& pKF, const vector<Point3f> &localMPs,
 
     mNewKF = pKF;
 
+    // 创建新地图点
     findCorrespd(vMatched12, localMPs, vbGoodPrl);
 
+    // 更新共视关键帧
     mpMap->updateCovisibility(mNewKF);
 
     {
@@ -67,7 +69,7 @@ void LocalMapper::addNewKF(PtrKeyFrame& pKF, const vector<Point3f> &localMPs,
             pKF0->addCovisibleKF(pKF);
             Mat measure;
             g2o::Matrix6d info;
-            Track::calcOdoConstraintCam(pKF->odom - pKF0->odom, measure, info);
+            Track::calcOdoConstraintCam(pKF->odom - pKF0->odom, measure, info); // 将body系之间的SE(2)位姿变换计算成相机系之间的SE(3)位姿变换，并获得信息矩阵
 
             pKF0->setOdoMeasureFrom(pKF, measure, toCvMat6f(info));
             pKF->setOdoMeasureTo(pKF0, measure, toCvMat6f(info));
@@ -75,12 +77,12 @@ void LocalMapper::addNewKF(PtrKeyFrame& pKF, const vector<Point3f> &localMPs,
         }
 
         mpMap->insertKF(pKF);
-        mbUpdated = true;
+        mbUpdated = true;   // 有更新
 
     }
 
-    mbAbortBA = false;
-    mbAcceptNewKF = false;
+    mbAbortBA = false;      // 准备进行局部优化
+    mbAcceptNewKF = false;  // 暂不接受关键帧
 
 }
 
@@ -89,15 +91,16 @@ void LocalMapper::findCorrespd(const vector<int> &vMatched12, const vector<Point
     bool bNoMP = ( mpMap->countMPs() == 0 );
 
     // Identify tracked map points
-    PtrKeyFrame pPrefKF = mpMap->getCurrentKF();
+    PtrKeyFrame pPrefKF = mpMap->getCurrentKF(); // 上一关键帧
     if(!bNoMP) {
 
-        for(int i = 0, iend = pPrefKF->N; i < iend; i++) {
+        for(int i = 0, iend = pPrefKF->N; i < iend; i++) {  // 和上一关键帧观察到的地图点进行匹配
             if(pPrefKF->hasObservation(i) && vMatched12[i]>=0){
                 PtrMapPoint pMP = pPrefKF->getObservation(i);
                 if(!pMP){
                     printf("This is NULL. /in LM\n");
                 }
+                // 创建地图点
                 Eigen::Matrix3d xyzinfo, xyzinfo0;
                 Track::calcSE3toXYZInfo(pPrefKF->mViewMPs[i], cv::Mat::eye(4,4,CV_32FC1), mNewKF->Tcr, xyzinfo0, xyzinfo);
                 mNewKF->setViewMP( cvu::se3map(mNewKF->Tcr, pPrefKF->mViewMPs[i]), vMatched12[i], xyzinfo );
@@ -109,7 +112,7 @@ void LocalMapper::findCorrespd(const vector<int> &vMatched12, const vector<Point
 
 
     // Match features of MapPoints with those in NewKF
-    if(!bNoMP) {
+    if(!bNoMP) {    // 和全部地图点进行匹配
 
         //vector<PtrMapPoint> vLocalMPs(mLocalGraphMPs.begin(), mLocalGraphMPs.end());
         vector<PtrMapPoint> vLocalMPs = mpMap->getLocalMPs();
@@ -127,7 +130,7 @@ void LocalMapper::findCorrespd(const vector<int> &vMatched12, const vector<Point
             cvu::triangulate(pMP->getMainMeasure(), mNewKF->keyPointsUn[i].pt,
                              Config::Kcam*pMP->mMainKF->Tcw.rowRange(0,3),
                              Config::Kcam*mNewKF->Tcw.rowRange(0,3));
-            Point3f posNewKF = cvu::se3map(mNewKF->Tcw, x3d);
+            Point3f posNewKF = cvu::se3map(mNewKF->Tcw, x3d);   // 地图点在当前帧相机系下的坐标
             if(!pMP->acceptNewObserve(posNewKF, mNewKF->keyPoints[i])){
                 continue;
             }
@@ -142,7 +145,7 @@ void LocalMapper::findCorrespd(const vector<int> &vMatched12, const vector<Point
     }
 
     // Add new points from mNewKF to the map
-    for(int i = 0, iend = pPrefKF->N; i < iend; i++){
+    for(int i = 0, iend = pPrefKF->N; i < iend; i++){   // 从局部地图点创建
         if(!pPrefKF->hasObservation(i) && vMatched12[i]>=0){
             if(mNewKF->hasObservation(vMatched12[i]))
                 continue;
@@ -152,6 +155,7 @@ void LocalMapper::findCorrespd(const vector<int> &vMatched12, const vector<Point
             Eigen::Matrix3d xyzinfo, xyzinfo0;
             Track::calcSE3toXYZInfo(localMPs[i], pPrefKF->Tcw, mNewKF->Tcw, xyzinfo0, xyzinfo);
 
+            // 创建新地图点
             mNewKF->setViewMP(posKF, vMatched12[i], xyzinfo);
             pPrefKF->setViewMP(localMPs[i], i, xyzinfo0);
             //PtrMapPoint pMP = make_shared<MapPoint>(mNewKF, vMatched12[i], posW, vbGoodPrl[i]);
@@ -245,6 +249,8 @@ void LocalMapper::localBA(){
 #ifndef TIME_TO_LOG_LOCAL_BA
     optimizer.setForceStopFlag(&mbAbortBA);
 #endif
+
+    // 优化问题构建
     mpMap->loadLocalGraph(optimizer);
 
     WorkTimer timer;
@@ -322,14 +328,17 @@ void LocalMapper::run(){
             WorkTimer timer;
             timer.start();
 
+            // 获得局部地图（包括关键帧和地图点）
             updateLocalGraphInMap();
 
+            // 去除冗余的关键帧和无效的地图点
             pruneRedundantKfInMap();
 
             //removeOutlierChi2();
 
             updateLocalGraphInMap();
 
+            // 局部优化
             localBA();
 
             timer.stop();

@@ -59,6 +59,7 @@ public:
     void lock();
     void unlock();
 
+    // 获得两帧之间的共视点占各自观测到的地图点的比例
     static cv::Point2f compareViewMPs(const PtrKeyFrame& pKF1, const PtrKeyFrame& pKF2, std::set<PtrMapPoint>& spMPs);
 
     static double compareViewMPs(const PtrKeyFrame & pKF, const set<PtrKeyFrame> & vpKFs, std::set<PtrMapPoint> & vpMPs, int k = 2);

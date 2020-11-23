@@ -54,7 +54,7 @@ public:
     std::vector<cv::KeyPoint> keyPoints;
     std::vector<cv::KeyPoint> keyPointsUn;
     cv::Mat descriptors;
-    int N;
+    int N; // keypoint's number
     std::vector<size_t> GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel=-1, const int maxLevel=-1) const;
 
     // Scale Pyramid Info
@@ -76,8 +76,8 @@ public:
 
 
     // pose info: pose to ref KF, pose to World, odometry raw.
-    cv::Mat Tcr;
-    cv::Mat Tcw;
+    cv::Mat Tcr; // reference camera to current camera
+    cv::Mat Tcw; // world to current camera
 
     Se2 Trb;     // ref KF to body
     Se2 Twb;     // world to body

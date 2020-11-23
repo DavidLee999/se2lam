@@ -192,14 +192,14 @@ bool Map::pruneRedundantKF(){
             // Count MPs in thisKF observed by covKFs 2 times
             set<PtrMapPoint> spMPs;
             set<PtrKeyFrame> covKFs = thisKF->getAllCovisibleKFs();
-            double ratio = compareViewMPs(thisKF, covKFs, spMPs, 2);
+            double ratio = compareViewMPs(thisKF, covKFs, spMPs, 2);    // 当前帧所观测到的地图点中，同时被其两个及以上共视帧观测到的地图点的比例
             bool bIsThisKFRedundant = (ratio >= 0.8);
 
 
             // Do Prune if pass threashold test
             if(bIsThisKFRedundant) {
-                PtrKeyFrame lastKF = thisKF->mOdoMeasureTo.first;
-                PtrKeyFrame nextKF = thisKF->mOdoMeasureFrom.first;
+                PtrKeyFrame lastKF = thisKF->mOdoMeasureTo.first;       // 上一关键帧
+                PtrKeyFrame nextKF = thisKF->mOdoMeasureFrom.first;     // 下一关键帧
 
                 bool bIsInitKF = (thisKF->mIdKF == 0);
                 bool bHasFeatEdge = (thisKF->mFtrMeasureFrom.size() != 0);
@@ -224,6 +224,7 @@ bool Map::pruneRedundantKF(){
                         mKFs.erase(thisKF);
                         thisKF->setNull(thisKF);
 
+                        // 没有对预积分量进行操作
                         Mat measure;
                         g2o::Matrix6d info;
                         Track::calcOdoConstraintCam(nextKF->odom - lastKF->odom, measure, info);
@@ -235,24 +236,24 @@ bool Map::pruneRedundantKF(){
 
                         printf("!! INFO MP: Prune KF %d\n", thisKF->mIdKF);
 
-                        pruned = true;
+                        pruned = true;      // 只删除一帧？
                         prunedThis = true;
                         prunedIdxLocalKF = i;
-                    }
-                }
-            }
-        }
+                    } // if()
+                }// if()
+            } // if(bIsThisKFRedundant)
+        } // if (!pruned)
 
         if (!prunedThis) {
             goodIdxLocalKF.push_back(i);
         }
-    }
+    } // for()
 
     // Remove useless MP
     if(pruned) {
         for(int i = 0, iend = mLocalGraphMPs.size(); i < iend; i++) {
             PtrMapPoint pMP = mLocalGraphMPs[i];
-            if (pMP->isNull()) {
+            if (pMP->isNull()) { // 在删除关键帧(setNull)时，会同时把没有观测帧的地图点setNull
                 mMPs.erase(pMP);
             }
             else {
@@ -296,6 +297,7 @@ void Map::updateLocalGraph(){
 
     setLocalKFs.insert(mCurrentKF);
 
+    // 获得共视帧：3层关联，即当前帧的共视帧的共视帧的共视帧，组成局部关键帧
     int searchLevel = 3;
     while(searchLevel>0){
         std::set<PtrKeyFrame, KeyFrame::IdLessThan> currentLocalKFs = setLocalKFs;
@@ -307,6 +309,7 @@ void Map::updateLocalGraph(){
         searchLevel--;
     }
 
+    // 获得局部关键帧的地图点，组成局部地图点
     for(auto i = setLocalKFs.begin(), iend = setLocalKFs.end(); i != iend; i++){
         PtrKeyFrame pKF = *i;
         bool checkPrl = false;
@@ -314,6 +317,7 @@ void Map::updateLocalGraph(){
         setLocalMPs.insert(pMPs.begin(), pMPs.end());
     }
 
+    // 获得观测到局部地图点的（且在局部地图中）的所有关键帧
     setRefKFs.clear();
     for(auto i = setLocalMPs.begin(), iend = setLocalMPs.end(); i != iend; i++){
         PtrMapPoint pMP = (*i);
@@ -900,6 +904,7 @@ void Map::loadLocalGraph(SlamOptimizer &optimizer)
     int minKFid = -1;
     // If no reference KF, the KF with minId should be fixed
 
+    // 最小关键帧id，后面优化时会将之固定
     if(mRefKFs.empty()){
         minKFid = (*(mLocalGraphKFs.begin()))->id;
         for(auto i = mLocalGraphKFs.begin(), iend = mLocalGraphKFs.end(); i != iend; i++){
@@ -926,6 +931,7 @@ void Map::loadLocalGraph(SlamOptimizer &optimizer)
 
         bool fixed = (pKF->id == minKFid) || pKF->id == 1;
 
+        // 关键帧的位姿用SE(2)来表示
         g2o::SE2 pose(pKF->Twb.x, pKF->Twb.y, pKF->Twb.theta);
         addVertexSE2(optimizer, pose, vertexIdKF, fixed);
 
@@ -939,6 +945,7 @@ void Map::loadLocalGraph(SlamOptimizer &optimizer)
         if(pKF->isNull())
             continue;
 
+        // 接 删除冗余关键帧，被删除则对应的里程计预积分不使用
         PtrKeyFrame pKF1 = pKF->preOdomFromSelf.first;
         PreSE2 meas = pKF->preOdomFromSelf.second;
         auto it = std::find(mLocalGraphKFs.begin(), mLocalGraphKFs.end(), pKF1);
@@ -948,6 +955,7 @@ void Map::loadLocalGraph(SlamOptimizer &optimizer)
         int id1 = it - mLocalGraphKFs.begin();
 
         {
+            // 里程计预积分优化边
             Eigen::Map<Eigen::Matrix3d, RowMajor> info(meas.cov);
             addEdgeSE2(optimizer, Vector3D(meas.meas), i, id1, info);
         }
@@ -999,14 +1007,15 @@ void Map::loadLocalGraph(SlamOptimizer &optimizer)
                 continue;
             }
 
-            int ftrIdx = pMP->getFtrIdx(pKF);
-            int octave = pMP->getOctave(pKF);
+            int ftrIdx = pMP->getFtrIdx(pKF);   // 观测到的序号
+            int octave = pMP->getOctave(pKF);   // 金字塔层级
             const float Sigma2 = pKF->mvLevelSigma2[octave];
-            Eigen::Vector2d uv = toVector2d( pKF->keyPointsUn[ftrIdx].pt );
+            Eigen::Vector2d uv = toVector2d( pKF->keyPointsUn[ftrIdx].pt ); // 观测值
 
 
             int vertexIdKF = -1;
 
+            // 获得关键帧在优化图中的id
             auto it1 = std::find(mLocalGraphKFs.begin(), mLocalGraphKFs.end(), pKF);
             if(it1 != mLocalGraphKFs.end()) {
                 vertexIdKF =  it1 - mLocalGraphKFs.begin();
@@ -1022,19 +1031,22 @@ void Map::loadLocalGraph(SlamOptimizer &optimizer)
 
             // compute covariance/information
             Matrix2d Sigma_u = Eigen::Matrix2d::Identity() * Sigma2;
-            Vector3d lc = toVector3d( pKF->mViewMPs[ftrIdx] );
+            Vector3d lc = toVector3d( pKF->mViewMPs[ftrIdx] );      // 地图点在关键帧相机坐标系下的坐标
 
+            // SE(2)-XYZ constraint
             double zc = lc(2);
             double zc_inv = 1. / zc;
             double zc_inv2 = zc_inv * zc_inv;
-                    const float& fx = Config::fxCam;
+            const float &fx = Config::fxCam;
             Matrix23d J_pi;
             J_pi << fx * zc_inv, 0, -fx*lc(0)*zc_inv2,
                     0, fx * zc_inv, -fx*lc(1)*zc_inv2;
+                
+            // 相机位姿
             Matrix3d Rcw = toMatrix3d(pKF->Tcw.rowRange(0,3).colRange(0,3));
             Vector3d pi(pKF->Twb.x, pKF->Twb.y, 0);
 
-
+            // 显式构建信息矩阵
             Matrix23d J_pi_Rcw = J_pi * Rcw;
 
             Matrix2d J_rotxy = (J_pi_Rcw * skew(lw-pi)).block<2,2>(0,0);

@@ -94,18 +94,18 @@ public:
     // Set a new MP in location index (used in MP merge)
     void setObservation(const PtrMapPoint& pMP, int idx);
 
-    vector<cv::Point3f> mViewMPs;
+    vector<cv::Point3f> mViewMPs;   // 当前关键帧所见的地图点，在相机坐标系下
     vector<Eigen::Matrix3d, Eigen::aligned_allocator<Eigen::Matrix3d> > mViewMPsInfo;
     void setViewMP(cv::Point3f pt3f, int idx, Eigen::Matrix3d info);
 
     // KeyFrame contraints: From this or To this
     std::map< shared_ptr<KeyFrame>, SE3Constraint > mFtrMeasureFrom;
     std::map< shared_ptr<KeyFrame>, SE3Constraint > mFtrMeasureTo;
-    std::pair< shared_ptr<KeyFrame>, SE3Constraint > mOdoMeasureFrom;
-    std::pair< shared_ptr<KeyFrame>, SE3Constraint > mOdoMeasureTo;
+    std::pair< shared_ptr<KeyFrame>, SE3Constraint > mOdoMeasureFrom; // 由自身出发，连接到下一个关键帧的里程计测量(edge)
+    std::pair< shared_ptr<KeyFrame>, SE3Constraint > mOdoMeasureTo;   // 由上一个关键帧出发，连接到自身的里程计测量(edge)
 
-    std::pair< shared_ptr<KeyFrame>, PreSE2 > preOdomFromSelf;
-    std::pair< shared_ptr<KeyFrame>, PreSE2 > preOdomToSelf;
+    std::pair< shared_ptr<KeyFrame>, PreSE2 > preOdomFromSelf; // 由自身出发，连接到下一个关键帧的里程计预积分量
+    std::pair< shared_ptr<KeyFrame>, PreSE2 > preOdomToSelf;   // 由上一个关键帧出发，连接到自身的里程计预积分量
 
     void addFtrMeasureFrom(shared_ptr<KeyFrame> pKF, const cv::Mat& _mea, const cv::Mat& _info);
     void addFtrMeasureTo(shared_ptr<KeyFrame> pKF, const cv::Mat& _mea, const cv::Mat& _info);
@@ -133,7 +133,7 @@ protected:
     std::map<int, PtrMapPoint> mDualObservations;
 
     bool mbNull;
-    std::set<shared_ptr<KeyFrame> > mCovisibleKFs;
+    std::set<shared_ptr<KeyFrame> > mCovisibleKFs; // 共视关键帧
     std::mutex mMutexPose;
     std::mutex mMutexObs;
 //    std::mutex mMutexImg;

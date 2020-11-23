@@ -77,7 +77,7 @@ void Track::run(){
             {
                 locker lock(mMutexForPub);
                 bool noFrame = !(Frame::nextId);
-                if(noFrame)
+                if(noFrame) // 创建第一帧
                     mCreateFrame(img, odo);
                 else
                     mTrack(img, odo);
@@ -129,14 +129,16 @@ void Track::mTrack(const Mat &img, const Se2& odo){
     mFrame = Frame(img, odo, mpORBextractor, Config::Kcam, Config::Dcam);
 
     ORBmatcher matcher(0.9);
-    int nMatched = matcher.MatchByWindow(mRefFrame, mFrame, mPrevMatched, 20, mMatchIdx);
+    int nMatched = matcher.MatchByWindow(mRefFrame, mFrame, mPrevMatched, 20, mMatchIdx); // mMatchIdx: mRefFrame.N长的向量，对应点所匹配的mFrame的特征点序号
 
+    // 估计基础矩阵，去除匹配外点
     nMatched = removeOutliers(mRefFrame.keyPointsUn, mFrame.keyPointsUn, mMatchIdx);
 
+    // 里程计预积分获得当前帧的位姿
     updateFramePose();
 
     // Check parallax and do triangulation
-    int nTrackedOld = doTriangulate();
+    int nTrackedOld = doTriangulate();  // 当前帧和关键帧的匹配点对中，地图点的数量
 
     // Need new KeyFrame decision
     if( needNewKF(nTrackedOld, nMatched) ) {
@@ -145,6 +147,7 @@ void Track::mTrack(const Mat &img, const Se2& odo){
         PtrKeyFrame pKF = make_shared<KeyFrame>(mFrame);
 
         assert( mpMap->getCurrentKF()->mIdKF == mpKF->mIdKF);
+        // 里程计预积分量设置
         mpKF->preOdomFromSelf = make_pair(pKF, preSE2);
         pKF->preOdomToSelf = make_pair(mpKF, preSE2);
         mpLocalMapper->addNewKF(pKF, mLocalMPs, mMatchIdx, mvbGoodPrl);
@@ -160,13 +163,15 @@ void Track::mTrack(const Mat &img, const Se2& odo){
 }
 
 void Track::updateFramePose(){
+    // 通过里程计得到预测位姿
     mFrame.Trb = mFrame.odom - mpKF->odom;
     Se2 dOdo = mpKF->odom - mFrame.odom;
-    mFrame.Tcr = Config::cTb * dOdo.toCvSE3() * Config::bTc;
+    mFrame.Tcr = Config::cTb * dOdo.toCvSE3() * Config::bTc;    // bTc: camera to body
     mFrame.Tcw = mFrame.Tcr * mpKF->Tcw;
     mFrame.Twb = mpKF->Twb + (mFrame.odom - mpKF->odom);
 
     // preintegration
+    // 预积分位姿变化量
     Eigen::Map<Vector3d> meas(preSE2.meas);
     Se2 odok = mFrame.odom - lastOdom;
     Vector2d odork(odok.x, odok.y);
@@ -174,11 +179,12 @@ void Track::updateFramePose(){
     meas.head<2>() += Phi_ik * odork;
     meas[2] += odok.theta;
 
+    // 协方差传播
     Matrix3d Ak = Matrix3d::Identity();
     Matrix3d Bk = Matrix3d::Identity();
     Ak.block<2,1>(0,2) = Phi_ik * Vector2d(-odork[1], odork[0]);
     Bk.block<2,2>(0,0) = Phi_ik;
-    Eigen::Map<Matrix3d, RowMajor> Sigmak(preSE2.cov);
+    Eigen::Map<Matrix3d, RowMajor> Sigmak(preSE2.cov); // 利用Eigen::Map，直接操作内存
     Matrix3d Sigma_vk = Matrix3d::Identity();
     Sigma_vk(0,0) = (Config::ODO_X_NOISE * Config::ODO_X_NOISE);
     Sigma_vk(1,1) = (Config::ODO_Y_NOISE * Config::ODO_Y_NOISE);
@@ -260,7 +266,7 @@ void Track::calcSE3toXYZInfo(Point3f xyz1, const Mat &Tcw1, const Mat &Tcw2, Eig
 
     Point3f O1 = Point3f(cvu::inv(Tcw1).rowRange(0,3).col(3));
     Point3f O2 = Point3f(cvu::inv(Tcw2).rowRange(0,3).col(3));
-    Point3f xyz = cvu::se3map(cvu::inv(Tcw1), xyz1);
+    Point3f xyz = cvu::se3map(cvu::inv(Tcw1), xyz1); // 相机1坐标系下的地图点坐标
     Point3f vO1 = xyz - O1;
     Point3f vO2 = xyz - O2;
     float sinParallax = cv::norm(vO1.cross(vO2)) / ( cv::norm(vO1) * cv::norm(vO2) );
@@ -344,6 +350,7 @@ int Track::removeOutliers(const vector<KeyPoint> &kp1, const vector<KeyPoint> &k
 }
 
 bool Track::needNewKF(int nTrackedOldMP, int nMatched){
+    // 视觉匹配条件
     int nOldKP = mpKF->getSizeObsMP();
     bool c0 = mFrame.id - mpKF->id > nMinFrames;
     bool c1 = (float)nTrackedOldMP <= (float)nOldKP * 0.5f;
@@ -352,6 +359,7 @@ bool Track::needNewKF(int nTrackedOldMP, int nMatched){
     bool c4 = nMatched < 0.1f * Config::MaxFtrNumber || nMatched < 20;
     bool bNeedNewKF = c0 && ( (c1 && c2) || c3 || c4 );
 
+    // odo移动条件
     bool bNeedKFByOdo = true;
     if(mbUseOdometry){
         Se2 dOdo = mFrame.odom - mpKF->odom;
@@ -381,7 +389,7 @@ int Track::doTriangulate(){
     }
 
     Mat TfromRefKF = cvu::inv(mFrame.Tcr);
-    Point3f Ocam = Point3f(TfromRefKF.rowRange(0,3).col(3));
+    Point3f Ocam = Point3f(TfromRefKF.rowRange(0,3).col(3)); // 相对参考关键帧的相机中心位姿
     int nTrackedOld = 0;
     mvbGoodPrl = vector<bool>(mRefFrame.N, false);
     mnGoodPrl = 0;
@@ -391,6 +399,7 @@ int Track::doTriangulate(){
         if(mMatchIdx[i] < 0)
             continue;
 
+        // 已有地图点，不再三角化
         if(mpKF->hasObservation(i)){
             mLocalMPs[i] = mpKF->mViewMPs[i];
             nTrackedOld++;
@@ -404,7 +413,7 @@ int Track::doTriangulate(){
         Point3f pos = cvu::triangulate(pt_KF, pt, P_KF, P);
 
         if( Config::acceptDepth(pos.z) ) {
-            mLocalMPs[i] = pos;
+            mLocalMPs[i] = pos; // 新的局部地图点
             if( cvu::checkParallax(Point3f(0,0,0), Ocam, pos, 2) ) {
                 mnGoodPrl++;
                 mvbGoodPrl[i] = true;

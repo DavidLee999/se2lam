@@ -55,9 +55,9 @@ private:
 
     ORBextractor* mpORBextractor;
 
-    std::vector<cv::Point3f> mLocalMPs;
+    std::vector<cv::Point3f> mLocalMPs; // 局部地图点
     int mnGoodPrl; // count number of mLocalMPs with good parallax
-    std::vector<bool> mvbGoodPrl;
+    std::vector<bool> mvbGoodPrl;   // 当前帧的匹配点中，哪些有较好的视差
 
     int nMinFrames;
     int nMaxFrames;
@@ -69,6 +69,7 @@ private:
 
     void mCreateFrame(const cv::Mat& img, const Se2& odo);
     void mTrack(const cv::Mat& img, const Se2& odo);
+    // 重置，每添加一次关键帧即进行重置，方便进行基于关键帧的跟踪和里程计预积分等
     void resetLocalTrack();
     void updateFramePose();
     int removeOutliers(const std::vector<cv::KeyPoint>& kp1, const std::vector<cv::KeyPoint>& kp2, std::vector<int>& matches);
